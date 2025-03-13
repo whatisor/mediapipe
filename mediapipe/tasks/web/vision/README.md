@@ -2,6 +2,22 @@
 
 This package contains the vision tasks for MediaPipe.
 
+# How to build using docker file(from mediapipe directory).
+
+```
+docker build --tag=mediapipe .
+
+docker run --rm -it mediapipe bash
+
+npm install @bazel/bazelisk
+
+./node_modules/@bazel/bazelisk/bazelisk-linux_amd64 build //mediapipe/tasks/web/vision:all
+
+```
+
+Output path: /mediapipe/bazel-out/k8-fastbuild/bin/mediapipe
+
+
 ## Face Detector
 
 The MediaPipe Face Detector task lets you detect the presence and location of
