@@ -1,4 +1,3 @@
-mkdir cache;
 script="rm .bazelversion; bazel build //mediapipe/tasks/web/vision:all; \
      npm install -g @microsoft/api-extractor; \
      cp mediapipe/tasks/web/vision/api-extractor.json bazel-out/k8-fastbuild/bin/mediapipe/tasks/web/vision/api-extractor.json; \
@@ -6,5 +5,5 @@ script="rm .bazelversion; bazel build //mediapipe/tasks/web/vision:all; \
      cd bazel-out/k8-fastbuild/bin/mediapipe/tasks/web/vision; npx api-extractor run; \
      cp -rf vision_pkg /mediapipe/vision_pkg; \
      echo Done. "
-docker run -v .:/mediapipe -v cache:/root/.cache --rm -it mediapipe bash -c "$script;"
+docker run -v .:/mediapipe --rm -it mediapipe bash -c "$script;"
 
