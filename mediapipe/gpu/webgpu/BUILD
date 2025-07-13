@@ -95,6 +95,14 @@ cc_library(
     name = "webgpu_texture_view",
     hdrs = ["webgpu_texture_view.h"],
     visibility = ["//visibility:public"],
+    deps = [
+        "//mediapipe/gpu:gpu_buffer_storage",
+    ] + select({
+        "//mediapipe:emscripten": [],
+        "//conditions:default": [
+            "//third_party/dawn:webgpu_headers",
+        ],
+    }),
 )
 
 cc_library(
@@ -130,8 +138,16 @@ cc_library(
         "//mediapipe/framework/port:status",
         "//mediapipe/web:jspi_check",
         "//third_party/dawn:webgpu_headers",
+        "@com_google_absl//absl/base:no_destructor",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-    ],
+        "@com_google_absl//absl/time",
+    ] + select({
+        "//mediapipe:emscripten": [
+            "//third_party/emdawnwebgpu:webgpu",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
@@ -141,6 +157,7 @@ cc_library(
     deps = [
         ":webgpu_service",
         ":webgpu_texture_view",
+        ":webgpu_utils",
         "//mediapipe/calculators/tensor:image_to_tensor_converter",
         "//mediapipe/framework:calculator_framework",
         "//mediapipe/framework/formats:tensor",
@@ -163,6 +180,7 @@ cc_library(
         "//mediapipe/gpu/webgpu:webgpu_texture_buffer",
         "//mediapipe/gpu/webgpu:webgpu_texture_buffer_3d",
         "//mediapipe/gpu/webgpu:webgpu_texture_view",
+        "//mediapipe/gpu/webgpu:webgpu_utils",
         "//mediapipe/util:resource_util",
         "@com_google_absl//absl/strings:str_format",
     ],

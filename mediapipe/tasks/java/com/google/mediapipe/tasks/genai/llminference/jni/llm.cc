@@ -84,6 +84,7 @@ LlmModelSettings ParseModelSettings(void* bytes, int size) {
   output.sequence_batch_size = input.sequence_batch_size();
   output.num_decode_steps_per_sync = input.num_decode_steps_per_sync();
   output.max_num_tokens = input.max_tokens();
+  output.max_num_images = input.max_num_images();
   output.max_top_k = input.max_top_k();
   output.number_of_supported_lora_ranks =
       input.number_of_supported_lora_ranks();
@@ -113,6 +114,13 @@ LlmModelSettings ParseModelSettings(void* bytes, int size) {
       output.preferred_backend = kLlmPreferredBackendDefault;
       break;
   }
+  if (input.has_audio_model_settings()) {
+    output.enable_audio_modality = true;
+    output.max_audio_sequence_length =
+        input.audio_model_settings().max_audio_sequence_length();
+  } else {
+    output.enable_audio_modality = false;
+  }
   return output;
 }
 
@@ -133,7 +141,37 @@ LlmSessionConfig ParseSessionConfig(void* bytes, int size) {
           ? input.graph_config().include_token_cost_calculator()
           : kDefaultIncludeTokenCostCalculator;
   output.enable_vision_modality = input.graph_config().enable_vision_modality();
-  output.prompt_templates = nullptr;
+  output.enable_audio_modality = input.graph_config().enable_audio_modality();
+  if (input.has_prompt_templates()) {
+    LlmPromptTemplates* prompt_templates = new LlmPromptTemplates();
+    if (input.prompt_templates().has_user_prefix()) {
+      prompt_templates->user_prefix =
+          strdup(input.prompt_templates().user_prefix().c_str());
+    }
+    if (input.prompt_templates().has_user_suffix()) {
+      prompt_templates->user_suffix =
+          strdup(input.prompt_templates().user_suffix().c_str());
+    }
+    if (input.prompt_templates().has_model_prefix()) {
+      prompt_templates->model_prefix =
+          strdup(input.prompt_templates().model_prefix().c_str());
+    }
+    if (input.prompt_templates().has_model_suffix()) {
+      prompt_templates->model_suffix =
+          strdup(input.prompt_templates().model_suffix().c_str());
+    }
+    if (input.prompt_templates().has_system_prefix()) {
+      prompt_templates->system_prefix =
+          strdup(input.prompt_templates().system_prefix().c_str());
+    }
+    if (input.prompt_templates().has_system_suffix()) {
+      prompt_templates->system_suffix =
+          strdup(input.prompt_templates().system_suffix().c_str());
+    }
+    output.prompt_templates = prompt_templates;
+  } else {
+    output.prompt_templates = nullptr;
+  }
   return output;
 }
 
@@ -145,6 +183,34 @@ void FreeModelSettings(LlmModelSettings* model_settings) {
   delete[] model_settings->supported_lora_ranks;
   model_settings->model_path = nullptr;
   model_settings->cache_dir = nullptr;
+}
+
+void FreeSessionConfig(LlmSessionConfig* session_config) {
+  // Release optional resources because they are initialized with strdup or new.
+  if (session_config->lora_path != nullptr) {
+    delete session_config->lora_path;
+  }
+  if (session_config->prompt_templates != nullptr) {
+    if (session_config->prompt_templates->user_prefix != nullptr) {
+      delete session_config->prompt_templates->user_prefix;
+    }
+    if (session_config->prompt_templates->user_suffix != nullptr) {
+      delete session_config->prompt_templates->user_suffix;
+    }
+    if (session_config->prompt_templates->model_prefix != nullptr) {
+      delete session_config->prompt_templates->model_prefix;
+    }
+    if (session_config->prompt_templates->model_suffix != nullptr) {
+      delete session_config->prompt_templates->model_suffix;
+    }
+    if (session_config->prompt_templates->system_prefix != nullptr) {
+      delete session_config->prompt_templates->system_prefix;
+    }
+    if (session_config->prompt_templates->system_suffix != nullptr) {
+      delete session_config->prompt_templates->system_suffix;
+    }
+    delete session_config->prompt_templates;
+  }
 }
 
 jbyteArray ToByteArray(JNIEnv* env, const LlmResponseContext& context) {
@@ -239,6 +305,7 @@ JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateSession)(
                           "Failed to initialize session: %s", error_msg)));
     free(error_msg);
   }
+  FreeSessionConfig(&session_config);
   return reinterpret_cast<jlong>(session);
 }
 
@@ -290,6 +357,36 @@ JNIEXPORT void JNICALL JNI_METHOD(nativeAddImage)(JNIEnv* env, jclass thiz,
   }
 }
 
+JNIEXPORT void JNICALL JNI_METHOD(nativeAddAudio)(JNIEnv* env, jclass thiz,
+                                                  jlong engine_handle,
+                                                  jlong session_handle,
+                                                  jbyteArray audio_bytes) {
+  char* error_msg = nullptr;
+
+  jbyte* audio_elements_ptr = env->GetByteArrayElements(audio_bytes, nullptr);
+  if (audio_elements_ptr == nullptr) {
+    ThrowIfError(env, absl::InternalError(
+                          "Failed to get byte array elements for audio."));
+    return;
+  }
+  jsize array_len_bytes = env->GetArrayLength(audio_bytes);
+
+  int error_code = LlmInferenceEngine_Session_AddAudio(
+      reinterpret_cast<void*>(engine_handle),
+      reinterpret_cast<void*>(session_handle),
+      reinterpret_cast<const char*>(audio_elements_ptr),
+      static_cast<int>(array_len_bytes), &error_msg);
+
+  env->ReleaseByteArrayElements(audio_bytes, audio_elements_ptr,
+                                JNI_ABORT);  // Release after C API call
+
+  if (error_code) {
+    ThrowIfError(env, absl::InternalError(absl::StrCat(
+                          "Failed to add audio spectrum: %s", error_msg)));
+    free(error_msg);
+  }
+}
+
 JNIEXPORT jbyteArray JNICALL
 JNI_METHOD(nativePredictSync)(JNIEnv* env, jclass thiz, jlong session_handle) {
   char* error_msg = nullptr;
@@ -333,6 +430,20 @@ JNIEXPORT void JNICALL JNI_METHOD(nativePredictAsync)(JNIEnv* env, jclass thiz,
   if (error_code) {
     ThrowIfError(env, absl::InternalError(absl::StrCat(
                           "Failed to predict async: %s", error_msg)));
+    free(error_msg);
+  }
+}
+
+JNIEXPORT void JNICALL JNI_METHOD(nativePendingProcessCancellation)(
+    JNIEnv* env, jclass, jlong session_handle) {
+  char* error_msg = nullptr;
+  int error_code = LlmInferenceEngine_Session_PendingProcessCancellation(
+      reinterpret_cast<LlmInferenceEngine_Session*>(session_handle),
+      &error_msg);
+  if (error_code) {
+    ThrowIfError(env,
+                 absl::InternalError(absl::StrCat(
+                     "Failed to cancel pending processes: %s", error_msg)));
     free(error_msg);
   }
 }
@@ -381,4 +492,79 @@ JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateSkBitmap)(
 JNIEXPORT void JNICALL JNI_METHOD(nativeDeleteSkBitmap)(JNIEnv*, jclass,
                                                         jlong bitmap_handle) {
   delete reinterpret_cast<SkBitmap*>(bitmap_handle);
+}
+
+JNIEXPORT jlong JNICALL JNI_METHOD(nativeGetSentencePieceProcessor)(
+    JNIEnv* env, jclass thiz, jlong engine_handle) {
+  const void* processor = nullptr;
+  char* error_msg = nullptr;
+  int error_code = LlmInferenceEngine_GetSentencePieceProcessor(
+      reinterpret_cast<void*>(engine_handle), &processor, &error_msg);
+  if (error_code) {
+    ThrowIfError(env,
+                 absl::InternalError(absl::StrCat(
+                     "Failed to get SentencePieceProcessor: %s", error_msg)));
+    free(error_msg);
+    return 0;  // Return 0 on failure.
+  }
+  return reinterpret_cast<jlong>(processor);
+}
+
+JNIEXPORT void JNICALL JNI_METHOD(nativeUpdateSessionConfig)(
+    JNIEnv* env, jclass thiz, jlong session_handle, jbyteArray config_bytes) {
+  if (session_handle == 0) {
+    ThrowIfError(env, absl::InvalidArgumentError("Invalid session handle."));
+    return;
+  }
+
+  auto session = reinterpret_cast<LlmInferenceEngine_Session*>(session_handle);
+
+  // Get the byte array data.
+  jbyte* config_data = env->GetByteArrayElements(config_bytes, nullptr);
+  jsize config_length = env->GetArrayLength(config_bytes);
+
+  // Parse the byte array into an LlmSessionConfig proto.
+  LlmSessionConfigProto session_config_proto;
+  if (!session_config_proto.ParseFromArray(config_data, config_length)) {
+    env->ReleaseByteArrayElements(config_bytes, config_data, JNI_ABORT);
+    ThrowIfError(env, absl::InvalidArgumentError("Invalid config bytes."));
+    return;
+  }
+  env->ReleaseByteArrayElements(config_bytes, config_data, JNI_ABORT);
+
+  // Convert the proto to the C struct.
+  SessionRuntimeConfig config = {};
+  size_t topk = 0;
+  float topp = 0.0f;
+  float temperature = 0.0f;
+  size_t random_seed = 0;
+  if (session_config_proto.has_topk()) {
+    topk = session_config_proto.topk();
+    config.topk = &topk;
+  }
+  if (session_config_proto.has_topp()) {
+    topp = session_config_proto.topp();
+    config.topp = &topp;
+  }
+  if (session_config_proto.has_temperature()) {
+    temperature = session_config_proto.temperature();
+    config.temperature = &temperature;
+  }
+  if (session_config_proto.has_random_seed()) {
+    random_seed = session_config_proto.random_seed();
+    config.random_seed = &random_seed;
+  }
+  if (session_config_proto.has_constraint_handle()) {
+    config.constraint =
+        reinterpret_cast<Constraint*>(session_config_proto.constraint_handle());
+  }
+
+  char* error_msg = nullptr;
+  int error_code =
+      LlmInferenceEngine_UpdateRuntimeConfig(session, &config, &error_msg);
+  if (error_code) {
+    ThrowIfError(env, absl::InternalError(absl::StrCat(
+                          "Failed to update runtime config: %s", error_msg)));
+    free(error_msg);
+  }
 }

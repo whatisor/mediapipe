@@ -1,14 +1,18 @@
 package com.google.mediapipe.tasks.genai.llminference;
 
+import android.util.Log;
 import com.google.auto.value.AutoValue;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.mediapipe.framework.image.MPImage;
 import com.google.mediapipe.tasks.genai.llminference.LlmTaskRunner.LlmSession;
 import com.google.mediapipe.tasks.genai.llminference.jni.proto.LlmOptionsProto.LlmSessionConfig;
+import com.google.mediapipe.tasks.genai.llminference.jni.proto.LlmResponseContextProto.LlmResponseContext;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * LlmInferenceSession Task Java API.
@@ -25,10 +29,41 @@ public class LlmInferenceSession implements AutoCloseable {
 
   private final LlmTaskRunner taskRunner;
   private final LlmSession session;
+  private final long callbackHandle;
+  private LlmInferenceSessionOptions options;
+
+  private Consumer<LlmResponseContext> currentListener = (unused) -> {};
 
   /** Constructor to initialize an {@link LlmInferenceSession}. */
   public static LlmInferenceSession createFromOptions(
       LlmInference llmInference, LlmInferenceSessionOptions options) {
+    LlmTaskRunner taskRunner = llmInference.getTaskRunner();
+    return new LlmInferenceSession(taskRunner, options);
+  }
+
+  private LlmInferenceSession(
+      LlmTaskRunner taskRunner,
+      LlmTaskRunner.LlmSession session,
+      LlmInferenceSessionOptions options) {
+    this.taskRunner = taskRunner;
+    this.session = session;
+    this.options = options;
+    this.callbackHandle =
+        taskRunner.registerCallback(
+            responseBytes -> currentListener.accept(taskRunner.parseResponse(responseBytes)));
+  }
+
+  private LlmInferenceSession(LlmTaskRunner taskRunner, LlmInferenceSessionOptions options) {
+    this.taskRunner = taskRunner;
+    this.session = taskRunner.createSession(createSessionConfigFromOptions(options));
+    this.options = options;
+    this.callbackHandle =
+        taskRunner.registerCallback(
+            responseBytes -> currentListener.accept(taskRunner.parseResponse(responseBytes)));
+  }
+
+  private static LlmSessionConfig createSessionConfigFromOptions(
+      LlmInferenceSessionOptions options) {
     LlmSessionConfig.Builder sessionConfig = LlmSessionConfig.newBuilder();
     sessionConfig.setTopk(options.topK());
     sessionConfig.setTopp(options.topP());
@@ -46,18 +81,26 @@ public class LlmInferenceSession implements AutoCloseable {
           LlmSessionConfig.GraphConfig.newBuilder()
               .setIncludeTokenCostCalculator(graphOptions.includeTokenCostCalculator())
               .setEnableVisionModality(graphOptions.enableVisionModality())
+              .setEnableAudioModality(graphOptions.enableAudioModality())
               .build();
       sessionConfig.setGraphConfig(graphConfig);
     }
-
-    LlmTaskRunner taskRunner = llmInference.getTaskRunner();
-    LlmSession session = taskRunner.createSession(sessionConfig.build());
-    return new LlmInferenceSession(taskRunner, session);
-  }
-
-  private LlmInferenceSession(LlmTaskRunner taskRunner, LlmSession session) {
-    this.taskRunner = taskRunner;
-    this.session = session;
+    if (options.constraintHandle().isPresent()) {
+      sessionConfig.setConstraintHandle(options.constraintHandle().get());
+    }
+    if (options.promptTemplates().isPresent()) {
+      LlmSessionConfig.PromptTemplates promptTemplates =
+          LlmSessionConfig.PromptTemplates.newBuilder()
+              .setUserPrefix(options.promptTemplates().get().userPrefix())
+              .setUserSuffix(options.promptTemplates().get().userSuffix())
+              .setModelPrefix(options.promptTemplates().get().modelPrefix())
+              .setModelSuffix(options.promptTemplates().get().modelSuffix())
+              .setSystemPrefix(options.promptTemplates().get().systemPrefix())
+              .setSystemSuffix(options.promptTemplates().get().systemSuffix())
+              .build();
+      sessionConfig.setPromptTemplates(promptTemplates);
+    }
+    return sessionConfig.build();
   }
 
   /**
@@ -70,6 +113,7 @@ public class LlmInferenceSession implements AutoCloseable {
    * @throws IllegalStateException if adding a query chunk to the session fails.
    */
   public void addQueryChunk(String inputText) {
+    validateState();
     taskRunner.addQueryChunk(session, inputText);
   }
 
@@ -80,7 +124,21 @@ public class LlmInferenceSession implements AutoCloseable {
    * @throws IllegalStateException if there is an internal error.
    */
   public void addImage(MPImage image) {
+    validateState();
     taskRunner.addImage(session, image);
+  }
+
+  /**
+   * Add an audio to the session.
+   *
+   * <p>Note: Only mono channel .wav audio is supported.
+   *
+   * @param audioData a byte array of audio data.
+   * @throws IllegalStateException if there is an internal error.
+   */
+  public void addAudio(byte[] audioData) {
+    validateState();
+    taskRunner.addAudio(session, audioData);
   }
 
   /**
@@ -94,6 +152,7 @@ public class LlmInferenceSession implements AutoCloseable {
    * @throws IllegalStateException if the inference fails.
    */
   public String generateResponse() {
+    validateState();
     List<String> tokens = Collections.unmodifiableList(taskRunner.predictSync(session));
     return decodeResponse(tokens, /* stripLeadingWhitespace= */ true);
   }
@@ -113,6 +172,7 @@ public class LlmInferenceSession implements AutoCloseable {
    * @throws IllegalStateException if the inference fails.
    */
   public ListenableFuture<String> generateResponseAsync() {
+    validateState();
     return generateResponseAsync((unused1, unused2) -> {});
   }
 
@@ -133,23 +193,51 @@ public class LlmInferenceSession implements AutoCloseable {
    * @throws IllegalStateException if the inference fails.
    */
   public ListenableFuture<String> generateResponseAsync(ProgressListener<String> progressListener) {
-    SettableFuture<String> future = SettableFuture.create();
-    StringBuilder response = new StringBuilder();
-    taskRunner.predictAsync(
-        session,
-        (partialResult, done) -> {
-          // Not using isEmpty() because it's not available on Android < 30.
-          boolean stripLeadingWhitespace = response.length() == 0;
-          String partialResultDecoded = decodeResponse(partialResult, stripLeadingWhitespace);
-          response.append(partialResultDecoded);
-          if (done) {
-            progressListener.run(partialResultDecoded, done);
-            future.set(response.toString());
-          } else if (!partialResultDecoded.isEmpty()) {
-            progressListener.run(partialResultDecoded, done);
-          }
-        });
-    return future;
+    validateState();
+
+    try {
+      taskRunner.acquireLock();
+
+      SettableFuture<String> future = SettableFuture.create();
+
+      currentListener =
+          new Consumer<LlmResponseContext>() {
+            private final StringBuilder response = new StringBuilder();
+
+            @Override
+            public void accept(LlmResponseContext responseContext) {
+              boolean done = responseContext.getDone();
+
+              // Not using isEmpty() because it's not available on Android < 30.
+              boolean stripLeadingWhitespace = response.length() == 0;
+              String partialResultDecoded =
+                  decodeResponse(responseContext.getResponsesList(), stripLeadingWhitespace);
+              response.append(partialResultDecoded);
+
+              if (done) {
+                taskRunner.releaseLock();
+                currentListener = unused -> {};
+                future.set(response.toString());
+              }
+
+              progressListener.run(partialResultDecoded, done);
+            }
+          };
+
+      taskRunner.predictAsync(session, callbackHandle);
+      return future;
+    } catch (Throwable t) {
+      // Only release the task lock if we fail to start the async inference. For successful
+      // inferences, we reset the task lock when we receive `done=true` in the callback above.
+      taskRunner.releaseLock();
+      this.currentListener = unused -> {};
+      throw t;
+    }
+  }
+
+  /** Cancels active <@code>generateResponseAsync</code> call in the session. */
+  public void cancelGenerateResponseAsync() {
+    taskRunner.pendingProcessCancellation(session);
   }
 
   /**
@@ -161,6 +249,7 @@ public class LlmInferenceSession implements AutoCloseable {
    * @throws IllegalStateException if the tokenization fails.
    */
   public int sizeInTokens(String text) {
+    validateState();
     return taskRunner.sizeInTokens(session, text);
   }
 
@@ -182,7 +271,6 @@ public class LlmInferenceSession implements AutoCloseable {
     return response.split(EOD, -1)[0];
   }
 
-  // TODO: b/368657051 - Make this model public once we can clone GPU sessions on Android.
   /**
    * Clones the current session.
    *
@@ -191,15 +279,73 @@ public class LlmInferenceSession implements AutoCloseable {
    * @return A new instance of `Session` which is cloned from the current session.
    * @throws IllegalStateException if cloning the current session fails.
    */
-  LlmInferenceSession cloneSession() {
+  public LlmInferenceSession cloneSession() {
     LlmSession clonedSession = taskRunner.cloneSession(session);
-    return new LlmInferenceSession(taskRunner, clonedSession);
+    return new LlmInferenceSession(taskRunner, clonedSession, options.toBuilder().build());
+  }
+
+  /**
+   * Updates the session options using a function that modifies the current options builder.
+   *
+   * <p>The provided lambda function receives the current session options builder, allowing
+   * modifications. After the lambda executes, the builder is used to create the new options.
+   *
+   * <p>The following fields cannot be changed after the session is created:
+   *
+   * <ul>
+   *   <li>LoRA path
+   *   <li>Graph config
+   * </ul>
+   *
+   * @param optionsUpdater A {@link Function} that accepts the current {@link
+   *     LlmInferenceSessionOptions.Builder} and applies modifications, then return the updated
+   *     options.
+   * @throws IllegalArgumentException if the update attempts to change immutable fields (LoRA path
+   *     or Graph config).
+   */
+  public void updateSessionOptions(
+      Function<LlmInferenceSessionOptions.Builder, LlmInferenceSessionOptions> optionsUpdater) {
+    LlmInferenceSessionOptions.Builder updatedOptionsBuilder = this.options.toBuilder();
+    LlmInferenceSessionOptions newOptions = optionsUpdater.apply(updatedOptionsBuilder);
+
+    if (this.options.equals(newOptions)) {
+      Log.i("LlmInferenceSession", "Session options were not updated because they are the same.");
+      return;
+    }
+
+    // Validate that immutable fields were not changed
+    if (!this.options.loraPath().equals(newOptions.loraPath())) {
+      throw new IllegalArgumentException(
+          "Lora path cannot be changed after the session is created.");
+    }
+    if (!this.options.graphOptions().equals(newOptions.graphOptions())) {
+      throw new IllegalArgumentException(
+          "Graph config cannot be changed after the session is created.");
+    }
+
+    // Update internal options and native session config
+    this.options = newOptions;
+    // Note: createSessionConfigFromOptions expects the final options object
+    taskRunner.updateSessionConfig(session, createSessionConfigFromOptions(newOptions));
+  }
+
+  /** Returns the options used for the current session. */
+  public LlmInferenceSessionOptions getSessionOptions() {
+    return this.options;
   }
 
   /** Closes and cleans up the {@link LlmInferenceSession}. */
   @Override
   public void close() {
+    validateState();
+    taskRunner.unregisterCallback(callbackHandle);
     taskRunner.deleteSession(session);
+  }
+
+  private void validateState() {
+    if (taskRunner.isLocked()) {
+      throw new IllegalStateException("Previous invocation still processing. Wait for done=true.");
+    }
   }
 
   /** Options for setting up an {@link LlmInferenceSessionOptions}. */
@@ -239,6 +385,12 @@ public class LlmInferenceSession implements AutoCloseable {
       /** Sets the parameters to customize the graph. */
       public abstract Builder setGraphOptions(GraphOptions graphOptions);
 
+      /** Sets the handle to the constraint. */
+      public abstract Builder setConstraintHandle(long constraintHandle);
+
+      /** Sets the prompt templates. */
+      public abstract Builder setPromptTemplates(PromptTemplates promptTemplates);
+
       abstract LlmInferenceSessionOptions autoBuild();
 
       /** Validates and builds the {@link LlmInferenceSessionOptions} instance. */
@@ -274,6 +426,12 @@ public class LlmInferenceSession implements AutoCloseable {
     /** Returns the parameters to customize the graph. */
     public abstract Optional<GraphOptions> graphOptions();
 
+    /** Returns the handle to the constraint. */
+    public abstract Optional<Long> constraintHandle();
+
+    /** Returns the prompt templates. */
+    public abstract Optional<PromptTemplates> promptTemplates();
+
     /** Returns a builder with the current options. */
     public abstract Builder toBuilder();
 
@@ -283,7 +441,9 @@ public class LlmInferenceSession implements AutoCloseable {
           .setTopK(40)
           .setTopP(1.0f)
           .setTemperature(0.8f)
-          .setRandomSeed(0);
+          .setRandomSeed(0)
+          .setLoraPath("")
+          .setConstraintHandle(0);
     }
   }
 

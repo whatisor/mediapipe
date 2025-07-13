@@ -52,7 +52,20 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_android_ndk/archive/d5c9d46a471e8fcd80e7ec5521b78bb2df48f4e0.zip",
 )
 
-load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
+http_archive(
+    name = "rules_shell",
+    sha256 = "bc61ef94facc78e20a645726f64756e5e285a045037c7a61f65af2941f4c25e1",
+    strip_prefix = "rules_shell-0.4.1",
+    url = "https://github.com/bazelbuild/rules_shell/releases/download/v0.4.1/rules_shell-v0.4.1.tar.gz",
+)
+
+load("@rules_shell//shell:repositories.bzl", "rules_shell_dependencies", "rules_shell_toolchains")
+
+rules_shell_dependencies()
+
+rules_shell_toolchains()
+
+load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")  # @unused
 
 http_archive(
     name = "build_bazel_rules_apple",
@@ -228,13 +241,13 @@ http_archive(
     ],
 )
 
-# XNNPACK on 2024-11-18
+# XNNPACK from 2025-04-02
 http_archive(
     name = "XNNPACK",
     # `curl -L <url> | shasum -a 256`
-    sha256 = "af30fe2b301330a7e19cd422acf22991de3c1f5d91dda58e9ee67544d608fa51",
-    strip_prefix = "XNNPACK-dc1549a7141c7a9496ae160bb27b8700f0f6e1f1",
-    url = "https://github.com/google/XNNPACK/archive/dc1549a7141c7a9496ae160bb27b8700f0f6e1f1.zip",
+    sha256 = "72549a5af09ee22204904fc93d35d2a19351e32a46f26c4838dda005824e3576",
+    strip_prefix = "XNNPACK-5ff876e4f88f4bec7a3ec853c366a33c8f797fb5",
+    url = "https://github.com/google/XNNPACK/archive/5ff876e4f88f4bec7a3ec853c366a33c8f797fb5.zip",
 )
 
 # 2020-07-09
@@ -265,13 +278,13 @@ http_archive(
     ],
 )
 
-# KleidiAI is needed to get the best possible performance out of XNNPack
+# KleidiAI is needed to get the best possible performance out of XNNPack, from 2025-04-02
 http_archive(
     name = "KleidiAI",
-    sha256 = "ad37707084a6d4ff41be10cbe8540c75bea057ba79d0de6c367c1bfac6ba0852",
-    strip_prefix = "kleidiai-40a926833857fb64786e02f97703e42b1537cb57",
+    sha256 = "ca8b8ee0c3dd2284c1eae3ac07f7064ce92317ac7c3cfcd1d511662e0594cdb8",
+    strip_prefix = "kleidiai-fb4caf0937a45002861cc12788b6018bfb89ae58",
     urls = [
-        "https://gitlab.arm.com/kleidi/kleidiai/-/archive/40a926833857fb64786e02f97703e42b1537cb57/kleidiai-40a926833857fb64786e02f97703e42b1537cb57.zip",
+        "https://github.com/ARM-software/kleidiai/archive/fb4caf0937a45002861cc12788b6018bfb89ae58.zip",
     ],
 )
 
@@ -282,6 +295,15 @@ http_archive(
     urls = [
         "https://github.com/pytorch/cpuinfo/archive/8df44962d437a0477f07ba6b8843d0b6a48646a4.zip",
     ],
+)
+
+# pthreadpool is a dependency of XNNPACK, from 2025-04-02
+http_archive(
+    name = "pthreadpool",
+    # `curl -L <url> | shasum -a 256`
+    sha256 = "745e56516d6a58d183eb33d9017732d87cff43ce9f78908906f9faa52633e421",
+    strip_prefix = "pthreadpool-b92447772365661680f486e39a91dfe6675adafc",
+    urls = ["https://github.com/google/pthreadpool/archive/b92447772365661680f486e39a91dfe6675adafc.zip"],
 )
 
 # TF on 2024-09-24
@@ -385,14 +407,6 @@ rules_foreign_cc_dependencies()
 load("@bazel_features//:deps.bzl", "bazel_features_deps")
 
 bazel_features_deps()
-
-# TODO: This is an are indirect dependency. We should factor it out.
-http_archive(
-    name = "pthreadpool",
-    sha256 = "a4cf06de57bfdf8d7b537c61f1c3071bce74e57524fe053e0bbd2332feca7f95",
-    strip_prefix = "pthreadpool-4fe0e1e183925bf8cfa6aae24237e724a96479b8",
-    urls = ["https://github.com/Maratyszcza/pthreadpool/archive/4fe0e1e183925bf8cfa6aae24237e724a96479b8.zip"],
-)
 
 load(
     "@build_bazel_rules_apple//apple:repositories.bzl",
@@ -592,7 +606,7 @@ http_archive(
     build_file = "@//third_party:opencv_android.BUILD",
     strip_prefix = "OpenCV-android-sdk",
     type = "zip",
-    url = "https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-android-sdk.zip",
+    url = "https://github.com/opencv/opencv/releases/download/4.12.0/opencv-4.12.0-android-sdk.zip",
 )
 
 # After OpenCV 3.2.0, the pre-compiled opencv2.framework has google protobuf symbols, which will
@@ -754,6 +768,19 @@ load("@//third_party:wasm_files.bzl", "wasm_files")
 
 wasm_files()
 
+# Eigen
+EIGEN_COMMIT = "33d0937c6bdf5ec999939fb17f2a553183d14a74"
+
+EIGEN_SHA256 = "1f4babf536ce8fc2129dbf92ff3be54cd18ffb2171e9eb40edd00f0a045a54fa"
+
+http_archive(
+    name = "eigen",
+    build_file = "@//third_party:eigen.BUILD",
+    sha256 = EIGEN_SHA256,
+    strip_prefix = "eigen-{commit}".format(commit = EIGEN_COMMIT),
+    urls = ["https://gitlab.com/libeigen/eigen/-/archive/{commit}/eigen-{commit}.tar.gz".format(commit = EIGEN_COMMIT)],
+)
+
 # Halide
 
 new_local_repository(
@@ -817,14 +844,14 @@ http_archive(
 
 http_archive(
     name = "skia",
-    sha256 = "038d4a21f9c72d71ab49e3a7d7677b39585329465d093a4260b6c73d2f3984d6",
-    strip_prefix = "skia-ac75382cb971d2f5465b4608a74561ecb68599c5",
-    urls = ["https://github.com/google/skia/archive/ac75382cb971d2f5465b4608a74561ecb68599c5.zip"],
+    sha256 = "2fe28173428f8eebf2aa8a665bad32136086cc065f50c7154678a96250d1cde1",
+    strip_prefix = "skia-226ae9d866748a2e68b6dbf114b37129c380a298",
+    urls = ["https://github.com/google/skia/archive/226ae9d866748a2e68b6dbf114b37129c380a298.zip"],
 )
 
 http_archive(
     name = "skia_user_config",
-    sha256 = "038d4a21f9c72d71ab49e3a7d7677b39585329465d093a4260b6c73d2f3984d6",
-    strip_prefix = "skia-ac75382cb971d2f5465b4608a74561ecb68599c5/include/config",
-    urls = ["https://github.com/google/skia/archive/ac75382cb971d2f5465b4608a74561ecb68599c5.zip"],
+    sha256 = "2fe28173428f8eebf2aa8a665bad32136086cc065f50c7154678a96250d1cde1",
+    strip_prefix = "skia-226ae9d866748a2e68b6dbf114b37129c380a298/include/config",
+    urls = ["https://github.com/google/skia/archive/226ae9d866748a2e68b6dbf114b37129c380a298.zip"],
 )

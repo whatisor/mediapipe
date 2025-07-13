@@ -36,10 +36,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @hide
  */
-public final class LlmTaskRunner implements AutoCloseable {
+final class LlmTaskRunner implements AutoCloseable {
   private final long engineHandle;
-  private final long callbackHandle;
-  private final AtomicBoolean isProcessing;
+  private final AtomicBoolean isLocked = new AtomicBoolean(false);
 
   private ProgressListener<List<String>> resultListener = (unused1, unused2) -> {};
 
@@ -149,100 +148,115 @@ public final class LlmTaskRunner implements AutoCloseable {
   /** The session to use for LLM inference calls. */
   public static final class LlmSession {
     private final long sessionHandle;
+    private LlmSessionConfig sessionConfig;
 
-    LlmSession(long sessionHandle) {
+    LlmSession(long sessionHandle, LlmSessionConfig sessionConfig) {
       this.sessionHandle = sessionHandle;
+      this.sessionConfig = sessionConfig;
+    }
+
+    public LlmSessionConfig getSessionConfig() {
+      return sessionConfig;
     }
   }
 
   public LlmTaskRunner(Context context, String taskName, LlmModelSettings modelSettings) {
     this.engineHandle = nativeCreateEngine(modelSettings.toByteArray());
-    this.callbackHandle = nativeRegisterCallback(this);
-    this.isProcessing = new AtomicBoolean(false);
   }
 
   /** Creates a new LLM session. */
   public LlmSession createSession(LlmSessionConfig sessionConfig) {
-    validateState();
     long sessionHandle = nativeCreateSession(sessionConfig.toByteArray(), engineHandle);
-    return new LlmSession(sessionHandle);
+    return new LlmSession(sessionHandle, sessionConfig);
   }
 
   /** Adds a new query to the session context. */
   public void addQueryChunk(LlmSession session, String input) {
-    validateState();
     nativeAddQueryChunk(session.sessionHandle, input);
   }
 
   /** Adds a new image to the session context. */
   public void addImage(LlmSession session, MPImage input) {
-    validateState();
     long imageHandle = createImage(input);
     try {
-      // TODO: Remove this dummy chunk.
-      // Since AddImage cannot distinguish if start_id is being added,
-      // use a dummy chunk to make sure the start_id is being added properly.
-      nativeAddQueryChunk(session.sessionHandle, "");
       nativeAddImage(session.sessionHandle, imageHandle);
     } finally {
       nativeDeleteSkBitmap(imageHandle);
     }
   }
 
+  /**
+   * Adds a new audio to the session context.
+   *
+   * @param session The LlmSession to add the audio spectrum to.
+   * @param rawAudioData A array of byte values representing the audio data.
+   */
+  public void addAudio(LlmSession session, byte[] rawAudioData) {
+    if (rawAudioData == null) {
+      throw new IllegalArgumentException("Audio data cannot be null.");
+    }
+
+    nativeAddAudio(engineHandle, session.sessionHandle, rawAudioData);
+  }
+
+  /**
+   * Returns the SentencePieceProcessor associated with the LLM engine.
+   *
+   * <p>The returned SentencePieceProcessor is owned by the LLM engine and should not be deleted by
+   * the caller.
+   */
+  final long getSentencePieceProcessor() {
+    return nativeGetSentencePieceProcessor(engineHandle);
+  }
+
   /** Invokes the LLM with the given session and waits for the result. */
   public List<String> predictSync(LlmSession session) {
-    validateState();
-    try {
-      isProcessing.set(true);
       byte[] responseBytes = nativePredictSync(session.sessionHandle);
-      return parseResponse(responseBytes).getResponsesList();
-    } finally {
-      isProcessing.set(false);
-    }
+    return parseResponse(responseBytes).getResponsesList();
   }
 
   /** Invokes the LLM with the given session and calls the callback with the result. */
-  public void predictAsync(LlmSession session, ProgressListener<List<String>> resultListener) {
-    validateState();
+  public void predictAsync(LlmSession session, long callbackHandle) {
+    nativePredictAsync(session.sessionHandle, callbackHandle);
+  }
 
-    try {
-      isProcessing.set(true);
-      this.resultListener = resultListener;
-      nativePredictAsync(session.sessionHandle, callbackHandle);
-    } catch (Throwable t) {
-      // Only reset `isProcessing` if we fail to start the async inference. For successful
-      // inferences, we reset `isProcessing` when we receive `done=true`.
-      isProcessing.set(false);
-      this.resultListener = (unused1, unused2) -> {};
-      throw t;
-    }
+  /** Cancels pending processes in the session. */
+  public void pendingProcessCancellation(LlmSession session) {
+    nativePendingProcessCancellation(session.sessionHandle);
   }
 
   /** Invokes the native token cost calculator and returns the size of the string in tokens. */
   public int sizeInTokens(LlmSession session, String text) {
-    validateState();
-    try {
-      isProcessing.set(true);
-      return nativeSizeInTokens(session.sessionHandle, text);
-    } finally {
-      isProcessing.set(false);
-    }
+    return nativeSizeInTokens(session.sessionHandle, text);
   }
 
   /** Clones the current session. */
   public LlmSession cloneSession(LlmSession session) {
-    validateState();
     long clonedSessionHandle = nativeCloneSession(session.sessionHandle);
-    return new LlmSession(clonedSessionHandle);
+    return new LlmSession(clonedSessionHandle, session.getSessionConfig());
   }
 
   /** Removes the session and frees up its context. */
   public void deleteSession(LlmSession session) {
-    validateState();
     nativeDeleteSession(session.sessionHandle);
   }
 
-  private LlmResponseContext parseResponse(byte[] response) {
+  /** Updates the session config. */
+  public void updateSessionConfig(LlmSession session, LlmSessionConfig config) {
+    byte[] configBytes = config.toByteArray();
+    session.sessionConfig = config;
+    nativeUpdateSessionConfig(session.sessionHandle, configBytes);
+  }
+
+  long registerCallback(LlmTaskRunnerDelegate delegate) {
+    return nativeRegisterCallback(delegate);
+  }
+
+  void unregisterCallback(long callbackHandle) {
+    nativeRemoveCallback(callbackHandle);
+  }
+
+  LlmResponseContext parseResponse(byte[] response) {
     try {
       return LlmResponseContext.parseFrom(response);
     } catch (InvalidProtocolBufferException e) {
@@ -250,23 +264,9 @@ public final class LlmTaskRunner implements AutoCloseable {
     }
   }
 
-  private void onAsyncResponse(byte[] responseBytes) {
-    LlmResponseContext response = parseResponse(responseBytes);
-    ProgressListener<List<String>> resultListener = this.resultListener;
-    if (response.getDone()) {
-      isProcessing.set(false);
-      this.resultListener = (unused1, unused2) -> {};
-    }
-    resultListener.run(response.getResponsesList(), response.getDone());
-  }
-
   @Override
   public void close() {
-    validateState();
     nativeDeleteEngine(engineHandle);
-    if (callbackHandle != 0) {
-      nativeRemoveCallback(callbackHandle);
-    }
   }
 
   private long createImage(MPImage image) {
@@ -321,10 +321,44 @@ public final class LlmTaskRunner implements AutoCloseable {
         buffer, width, height, skColorType.getValue(), skAlphaType.getValue());
   }
 
-  private void validateState() {
-    if (isProcessing.get()) {
-      throw new IllegalStateException("Previous invocation still processing. Wait for done=true.");
+  /**
+   * Acquires a global LLM task lock.
+   *
+   * <p>This lock can be used to ensure that asynchronous operations are not run in parallel. Lock
+   * manangement has to be done manually by the consuming APIs through this method, {@link
+   * #releaseLock()} and {@link #isLocked()}.
+   */
+  void acquireLock() {
+    // TODO: Move this lock to the session level.
+    if (isLocked.getAndSet(true)) {
+      throw new IllegalStateException("Cannot acquire LLM task lock while locked.");
     }
+  }
+
+  /**
+   * Releases a global LLM task lock.
+   *
+   * <p>This lock can be used to ensure that asynchronous operations are not run in parallel. Lock
+   * manangement has to be done manually by the consuming APIs through this method, {@link
+   * #acquireLock()} and {@link #isLocked()}.
+   */
+  void releaseLock() {
+    // TODO: Move this lock to the session level.
+    if (!isLocked.getAndSet(false)) {
+      throw new IllegalStateException("Cannot release LLM task lock while unlocked.");
+    }
+  }
+
+  /**
+   * Returns true if the global LLM task lock is held.
+   *
+   * <p>This lock can be used to ensure that asynchronous operations are not run in parallel. Lock
+   * manangement has to be done manually by the consuming APIs through this method, {@link
+   * #acquireLock()} and {@link #releaseLock()}.
+   */
+  boolean isLocked() {
+    // TODO: Move this lock to the session level.
+    return isLocked.get();
   }
 
   private static native long nativeCreateEngine(byte[] modelSettings);
@@ -347,12 +381,21 @@ public final class LlmTaskRunner implements AutoCloseable {
 
   private static native void nativePredictAsync(long sessionPointer, long callbackContextHandle);
 
+  private static native void nativePendingProcessCancellation(long sessionPointer);
+
   private static native int nativeSizeInTokens(long sessionPointer, String input);
 
   private static native long nativeCreateSkBitmap(
       ByteBuffer buffer, int width, int height, int colorType, int alphaType);
 
+  private static native void nativeDeleteSkBitmap(long imagePointer);
+
   private static native void nativeAddImage(long sessionPointer, long imagePointer);
 
-  private static native void nativeDeleteSkBitmap(long imagePointer);
+  private static native long nativeGetSentencePieceProcessor(long enginePointer);
+
+  private static native void nativeUpdateSessionConfig(long sessionPointer, byte[] config);
+
+  private static native void nativeAddAudio(
+      long enginePointer, long sessionPointer, byte[] rawAudioData);
 }

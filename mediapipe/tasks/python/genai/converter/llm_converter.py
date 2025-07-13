@@ -5,6 +5,7 @@ import os
 from typing import List, Optional
 
 from absl import logging
+from jax import numpy as jnp
 import numpy as np
 
 from mediapipe.python._framework_bindings import model_ckpt_util
@@ -22,6 +23,9 @@ class ConversionConfig(object):
     model_type: Name of the model, e.g. GEMMA_2B.
     backend: Target backend to run the model. Can be either "cpu" or "gpu".
     output_dir: Where the output file(s) to be stored.
+    is_quantized: Whether the checkpoint is already quantized. If the checkpoint
+      is already quantized, the converter will not quantize it again and it will
+      ignore the quantization parameters.
     is_symmetric: Whether to quantize symmetrically.
     attention_quant_bits: Target quantization bits for the attention layers.
     feedforward_quant_bits: Target quantization bits for the feedforward layers.
@@ -53,6 +57,9 @@ class ConversionConfig(object):
     submodel_type: Name of submodel, e.g. GEMMA_2B.
     use_fake_weights: Whether to use fake weights. If set to True, the weights
       will be filled with zeros.
+    use_dynamic_ple: Whether any PLE embeddings should be loaded dynamically.
+      Default is true, which will cause embeddings to only be loaded into VRAM
+      on demand.
   """
 
   def __init__(
@@ -62,6 +69,7 @@ class ConversionConfig(object):
       model_type: str,
       backend: str,
       output_dir: str,
+      is_quantized: bool = False,
       is_symmetric: bool = True,
       attention_quant_bits: int = 8,
       feedforward_quant_bits: int = 8,
@@ -78,6 +86,7 @@ class ConversionConfig(object):
       image_adapter_file: Optional[str] = None,
       submodel_type: Optional[str] = None,
       use_fake_weights: bool = False,
+      use_dynamic_ple: bool = True,
   ):
     self.input_ckpt = input_ckpt
     self.ckpt_format = ckpt_format
@@ -89,6 +98,7 @@ class ConversionConfig(object):
       logging.info('Creating output directory: %s', output_dir)
       os.makedirs(output_dir, exist_ok=True)
     self.output_dir = output_dir
+    self.is_quantized = is_quantized
     self.is_symmetric = is_symmetric
     self.attention_quant_bits = attention_quant_bits
     self.feedforward_quant_bits = feedforward_quant_bits
@@ -100,6 +110,7 @@ class ConversionConfig(object):
     self.image_adapter_file = image_adapter_file
     self.submodel_type = submodel_type
     self.use_fake_weights = use_fake_weights
+    self.use_dynamic_ple = use_dynamic_ple
     if output_tflite_file:
       parent_dir = os.path.dirname(output_tflite_file)
       if not os.path.isdir(parent_dir):
@@ -121,7 +132,15 @@ class ConversionConfig(object):
     if self.lora_rank is not None:
       if backend == 'cpu':
         raise ValueError('LoRA is not supported for CPU backend.')
-      lora_applicable_models = ['GEMMA_2B', 'GEMMA2_2B', 'PHI_2']
+      lora_applicable_models = [
+          'GEMMA_2B',
+          'GEMMA2_2B',
+          'PHI_2',
+          'GEMMA3_1B',
+          'GEMMA3_4B',
+          'GEMMA3_12B',
+          'GEMMA3_27B',
+      ]
       if model_type not in lora_applicable_models:
         raise ValueError(
             'LoRA is only applicable for the model_type:'
@@ -149,6 +168,9 @@ def quantize_by_actions(
     be packed (only applicable for the 4-bit quantized weights).
   """
   output_tensors = {}
+  qvalue_suffix = '_quantized_value'
+  scale_suffix = '_quantized_scale'
+  zp_suffix = '_quantized_zp'
   for action in actions:
     if action.tensor_value is None:
       continue
@@ -161,13 +183,31 @@ def quantize_by_actions(
     ):
       action.tensor_value = action.tensor_value.astype(np.float32)
     if (
-        action.tensor_value.dtype != np.float32
+        (not action.is_quantized)
+        and action.tensor_value.dtype != np.float32
         and action.tensor_value.dtype != np.int8
     ):
       raise ValueError(
           'All tensors should be casted to either float32 or int8, but got: %s'
           % action.tensor_value.dtype
       )
+    if action.is_quantized:
+      pack = action.tensor_value.dtype == jnp.int4
+      if qvalue_suffix in action.target_name:
+        target_name = action.target_name[: -len(qvalue_suffix)]
+        # Stores the quantized value in int8 for 4-bit quantization.
+        if pack:
+          action.tensor_value = action.tensor_value.astype(jnp.int8)
+        output_tensors[target_name] = (action.tensor_value, pack)
+      elif (
+          scale_suffix in action.target_name or zp_suffix in action.target_name
+      ):
+        output_tensors[action.target_name] = (
+            action.tensor_value,
+            False,
+        )
+      else:
+        output_tensors[action.target_name] = (action.tensor_value, False)
     if action.quantize_axis:
       pack = action.quantize_bits == 4
       if action.tensor_value.dtype == np.int8:
@@ -186,7 +226,7 @@ def quantize_by_actions(
               number_bits=action.quantize_bits,
           )
           output_tensors[action.target_name] = (target_var, pack)
-          output_tensors[action.target_name + '_quantized_scale'] = (
+          output_tensors[action.target_name + scale_suffix] = (
               scale,
               False,
           )
@@ -203,9 +243,9 @@ def quantize_by_actions(
               target_var, scale, zp
           )
         output_tensors[action.target_name] = (target_var, pack)
-        output_tensors[action.target_name + '_quantized_scale'] = (scale, False)
+        output_tensors[action.target_name + scale_suffix] = (scale, False)
         if zp is not None:
-          output_tensors[action.target_name + '_quantized_zp'] = (zp, False)
+          output_tensors[action.target_name + zp_suffix] = (zp, False)
     else:
       output_tensors[action.target_name] = (action.tensor_value, False)
   return output_tensors
@@ -224,6 +264,8 @@ def combined_weight_bins_to_tflite(
     image_encoder_file: Optional[str] = None,
     image_adapter_file: Optional[str] = None,
     submodel_type: Optional[str] = None,
+    use_dynamic_ple: Optional[bool] = None,
+    apply_srq: Optional[bool] = None,
 ):
   """Combines weight files to tflite file."""
   if backend == 'cpu':
@@ -250,6 +292,8 @@ def combined_weight_bins_to_tflite(
         '' if image_encoder_file is None else image_encoder_file,
         '' if image_adapter_file is None else image_adapter_file,
         '' if submodel_type is None else submodel_type,
+        True if use_dynamic_ple is None else use_dynamic_ple,
+        False if apply_srq is None else apply_srq,
     )
   else:
     raise ValueError('Unsupported backend: %s' % backend)
@@ -331,6 +375,7 @@ def convert_checkpoint(config: ConversionConfig) -> None:
     loader = converter_factory.create_ckpt_loader(
         config.ckpt_format,
         ckpt_path=config.input_ckpt,
+        is_quantized=config.is_quantized,
         is_symmetric=config.is_symmetric,
         backend=config.backend,
         attention_quant_bits=config.attention_quant_bits,
@@ -347,6 +392,7 @@ def convert_checkpoint(config: ConversionConfig) -> None:
       lora_loader = converter_factory.create_ckpt_loader(
           config.ckpt_format,
           ckpt_path=config.lora_ckpt,
+          is_quantized=config.is_quantized,
           is_symmetric=config.is_symmetric,
           backend=config.backend,
           attention_quant_bits=config.attention_quant_bits,
@@ -371,4 +417,7 @@ def convert_checkpoint(config: ConversionConfig) -> None:
       image_encoder_file=config.image_encoder_file,
       image_adapter_file=config.image_adapter_file,
       submodel_type=config.submodel_type,
+      use_dynamic_ple=config.use_dynamic_ple,
+      # Fow now, any pre-quantized model is assumed to require SRQ support.
+      apply_srq=config.is_quantized,
   )

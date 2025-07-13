@@ -120,7 +120,7 @@ cc_library(
         "//mediapipe/framework/port:ret_check",
         "//mediapipe/framework/port:status",
         "@com_google_absl//absl/log:absl_check",
-        "@eigen_archive//:eigen3",
+        "@eigen//:eigen3",
     ],
 )
 
@@ -632,8 +632,12 @@ cc_library(
             ":ahwb_gpu_releaser",
             ":hardware_buffer",
             ":hardware_buffer_pool",
+            ":shared_fd",
             ":tensor_ahwb_usage",
             ":unique_fd",
+            "//mediapipe/util:sync_wait",
+            "@com_google_absl//absl/base:log_severity",
+            "@com_google_absl//absl/time",
         ],
         ":android_link_native_window": [
             ":ahwb_gpu_releaser",
@@ -652,12 +656,26 @@ cc_library(
     }),
 )
 
+cc_library(
+    name = "tensor_fd_finished_func",
+    srcs = ["tensor_fd_finished_func.cc"],
+    hdrs = ["tensor_fd_finished_func.h"],
+    deps = [
+        ":shared_fd",
+        ":unique_fd",
+        "//mediapipe/util:sync_wait",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/time",
+    ],
+)
+
 cc_test(
     name = "tensor_test",
     srcs = ["tensor_test.cc"],
     tags = [
-        "noasan",
-        "not_run:arm",  # TODO: Remove noasan tag when SwiftShader supports sanitizers
+        "angle",
+        "not_run:arm",
+        "requires-gpu-nvidia",
     ],
     deps = [
         ":tensor",
@@ -709,6 +727,33 @@ cc_library(
         "//mediapipe/framework/port",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log:absl_log",
+    ],
+)
+
+cc_library(
+    name = "tensor_opencv",
+    srcs = ["tensor_opencv.cc"],
+    hdrs = ["tensor_opencv.h"],
+    deps = [
+        ":tensor",
+        "//mediapipe/framework/port:opencv_core",
+        "//mediapipe/framework/port:ret_check",
+        "//mediapipe/framework/port:status",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "tensor_opencv_test",
+    srcs = ["tensor_opencv_test.cc"],
+    deps = [
+        ":tensor",
+        ":tensor_opencv",
+        "//mediapipe/framework/port:gtest_main",
+        "@com_google_absl//absl/status",
     ],
 )
 

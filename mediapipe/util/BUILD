@@ -73,7 +73,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        "@eigen_archive//:eigen3",
+        "@eigen//:eigen3",
     ],
 )
 
@@ -212,6 +212,7 @@ cc_library(
         "//mediapipe/framework/formats:unique_fd",
         "//mediapipe/framework/port:ret_check",
         "//mediapipe/framework/port:status",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
@@ -408,7 +409,7 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
-        "@eigen_archive//:eigen3",
+        "@eigen//:eigen3",
     ],
 )
 
@@ -422,7 +423,7 @@ cc_test(
         "//mediapipe/framework:calculator_framework",
         "//mediapipe/framework/formats:time_series_header_cc_proto",
         "//mediapipe/framework/port:gtest_main",
-        "@eigen_archive//:eigen3",
+        "@eigen//:eigen3",
     ],
 )
 

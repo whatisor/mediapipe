@@ -46,6 +46,12 @@ class BundleConfig:
       model.
     prompt_suffix: The suffix that will be added to at the end of user prompt
       just before generating the response.
+    tflite_embedder: Path to the embedding model if the embedding lookup is done
+      externally.
+    tflite_per_layer_embedder: Path to the per layer embedding model if the per
+      layer embedding lookup is done externally.
+    tflite_vision_encoder: Path to the vision encoder model.
+    tflite_vision_adapter: Path to the vision adapter model.
   """
 
   tflite_model: str
@@ -57,6 +63,10 @@ class BundleConfig:
   system_prompt: Optional[str] = None
   prompt_prefix: Optional[str] = None
   prompt_suffix: Optional[str] = None
+  tflite_embedder: Optional[str] = None
+  tflite_per_layer_embedder: Optional[str] = None
+  tflite_vision_encoder: Optional[str] = None
+  tflite_vision_adapter: Optional[str] = None
 
 
 class _BundleTags(enum.Enum):
@@ -65,6 +75,10 @@ class _BundleTags(enum.Enum):
   TF_LITE_PREFILL_DECODE = 1
   TOKENIZER_MODEL = 2
   METADATA = 3
+  TF_LITE_EMBEDDER = 4
+  TF_LITE_PER_LAYER_EMBEDDER = 5
+  TF_LITE_VISION_ENCODER = 6
+  TF_LITE_VISION_ADAPTER = 7
 
 
 def _validate_config(config: BundleConfig):
@@ -119,6 +133,22 @@ def create_bundle(config: BundleConfig):
   if config.prompt_suffix:
     params.prompt_template.prompt_suffix = config.prompt_suffix
   artifacts[_BundleTags.METADATA.name] = params.SerializeToString()
+
+  if config.tflite_embedder:
+    with open(config.tflite_embedder, "rb") as f:
+      artifacts[_BundleTags.TF_LITE_EMBEDDER.name] = f.read()
+
+  if config.tflite_per_layer_embedder:
+    with open(config.tflite_per_layer_embedder, "rb") as f:
+      artifacts[_BundleTags.TF_LITE_PER_LAYER_EMBEDDER.name] = f.read()
+
+  if config.tflite_vision_encoder:
+    with open(config.tflite_vision_encoder, "rb") as f:
+      artifacts[_BundleTags.TF_LITE_VISION_ENCODER.name] = f.read()
+
+  if config.tflite_vision_adapter:
+    with open(config.tflite_vision_adapter, "rb") as f:
+      artifacts[_BundleTags.TF_LITE_VISION_ADAPTER.name] = f.read()
 
   output_filename = config.output_filename
   if not output_filename.endswith(".task"):

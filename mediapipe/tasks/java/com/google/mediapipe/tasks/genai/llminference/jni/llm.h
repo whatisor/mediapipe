@@ -79,6 +79,14 @@ JNIEXPORT void JNICALL JNI_METHOD(nativeAddImage)(JNIEnv *, jclass, jlong,
 
 /*
  * Class:     com_google_mediapipe_tasks_genai_llminference_LlmTaskRunner
+ * Method:    nativeAddAudio
+ * Signature: (JLL[B)V
+ */
+JNIEXPORT void JNICALL JNI_METHOD(nativeAddAudio)(JNIEnv *, jclass, jlong,
+                                                  jlong, jbyteArray);
+
+/*
+ * Class:     com_google_mediapipe_tasks_genai_llminference_LlmTaskRunner
  * Method:    nativePredictSync
  * Signature: (JL)[B
  */
@@ -111,6 +119,15 @@ JNIEXPORT void JNICALL JNI_METHOD(nativePredictAsync)(JNIEnv *, jclass, jlong,
 
 /*
  * Class:     com_google_mediapipe_tasks_genai_llminference_LlmTaskRunner
+ * Method:    nativePendingProcessCancellation
+ * Signature: (JL)V
+ */
+JNIEXPORT void JNICALL JNI_METHOD(nativePendingProcessCancellation)(JNIEnv *,
+                                                                    jclass,
+                                                                    jlong);
+
+/*
+ * Class:     com_google_mediapipe_tasks_genai_llminference_LlmTaskRunner
  * Method:    nativeSizeInTokens
  * Signature: (JLjava/lang/String;)I
  */
@@ -133,6 +150,23 @@ JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateSkBitmap)(JNIEnv *, jclass,
  */
 JNIEXPORT void JNICALL JNI_METHOD(nativeDeleteSkBitmap)(JNIEnv *, jclass,
                                                         jlong);
+
+/*
+ * Class:     com_google_mediapipe_tasks_genai_llminference_LlmTaskRunner
+ * Method:    nativeGetSentencePieceProcessor
+ * Signature: (J)J
+ */
+JNIEXPORT jlong JNICALL JNI_METHOD(nativeGetSentencePieceProcessor)(JNIEnv *,
+                                                                    jclass,
+                                                                    jlong);
+
+/*
+ * Class:     com_google_mediapipe_tasks_genai_llminference_LlmTaskRunner
+ * Method:    nativeUpdateSessionConfig
+ * Signature: (J[B)V
+ */
+JNIEXPORT void JNICALL JNI_METHOD(nativeUpdateSessionConfig)(JNIEnv *, jclass,
+                                                             jlong, jbyteArray);
 
 #ifdef __cplusplus
 }  // extern "C"

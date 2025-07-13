@@ -535,6 +535,24 @@ cc_library(
 )
 
 cc_test(
+    name = "image_properties_calculator_test",
+    srcs = ["image_properties_calculator_test.cc"],
+    data = ["//mediapipe/calculators/image/testdata:test_images"],
+    deps = [
+        ":image_properties_calculator",
+        "//mediapipe/framework:calculator_framework",
+        "//mediapipe/framework/deps:file_path",
+        "//mediapipe/framework/formats:image",
+        "//mediapipe/framework/formats:image_frame",
+        "//mediapipe/framework/port:gtest_main",
+        "//mediapipe/framework/port:parse_text_proto",
+        "//mediapipe/framework/tool:test_util",
+        "//mediapipe/gpu:gpu_buffer_to_image_frame_calculator",
+        "//mediapipe/gpu:image_frame_to_gpu_buffer_calculator",
+    ],
+)
+
+cc_test(
     name = "opencv_encoded_image_to_image_frame_calculator_test",
     srcs = ["opencv_encoded_image_to_image_frame_calculator_test.cc"],
     data = ["//mediapipe/calculators/image/testdata:test_images"],
@@ -619,6 +637,33 @@ cc_library(
         "//mediapipe/gpu:shader_util",
     ],
     alwayslink = 1,
+)
+
+cc_test(
+    name = "mask_overlay_calculator_test",
+    srcs = ["mask_overlay_calculator_test.cc"],
+    data = ["//mediapipe/calculators/image/testdata:test_images"],
+    tags = [
+        "angle",
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":mask_overlay_calculator",
+        "//mediapipe/framework:calculator_framework",
+        "//mediapipe/framework:calculator_runner",
+        "//mediapipe/framework/deps:file_path",
+        "//mediapipe/framework/formats:image_frame",
+        "//mediapipe/framework/formats:image_frame_opencv",
+        "//mediapipe/framework/port:gtest",
+        "//mediapipe/framework/port:gtest_main",
+        "//mediapipe/framework/port:parse_text_proto",
+        "//mediapipe/framework/tool:test_util",
+        "//mediapipe/gpu:gpu_buffer_to_image_frame_calculator",
+        "//mediapipe/gpu:image_frame_to_gpu_buffer_calculator",
+        "//third_party:opencv",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
 )
 
 cc_library(
@@ -757,7 +802,7 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
-        "@eigen_archive//:eigen3",
+        "@eigen//:eigen3",
     ],
 )
 
@@ -775,7 +820,7 @@ cc_library(
         "//mediapipe/framework/port:ret_check",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status:statusor",
-        "@eigen_archive//:eigen3",
+        "@eigen//:eigen3",
     ],
 )
 
@@ -799,12 +844,18 @@ cc_library(
         "//mediapipe/framework:calculator_framework",
         "//mediapipe/framework/api2:node",
         "//mediapipe/framework/api2:port",
+        "//mediapipe/framework/api3:calculator",
+        "//mediapipe/framework/api3:calculator_context",
+        "//mediapipe/framework/api3:calculator_contract",
+        "//mediapipe/framework/api3:contract",
+        "//mediapipe/framework/api3:node",
         "//mediapipe/framework/formats:image",
         "//mediapipe/framework/formats:image_frame",
         "//mediapipe/framework/port:ret_check",
         "//mediapipe/framework/port:status",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
     ] + select({
         "//mediapipe/gpu:disable_gpu": [],
         "//conditions:default": [

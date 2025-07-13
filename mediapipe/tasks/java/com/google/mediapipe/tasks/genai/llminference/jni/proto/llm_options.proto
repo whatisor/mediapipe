@@ -23,14 +23,14 @@ option java_outer_classname = "LlmOptionsProto";
 // Configurable parameters for creating an LLM session.
 message LlmSessionConfig {
   // Top K number of tokens to be sampled from for each decoding step.
-  uint32 topk = 1;
+  optional uint32 topk = 1;
 
   // Maximum cumulative probability over the tokens to sample from in each
   // decoding step for top-p / nucleus sampling.
-  float topp = 2;
+  optional float topp = 2;
 
   // Randomness when decoding the next token, 0.0f means greedy decoding.
-  float temperature = 3;
+  optional float temperature = 3;
 
   // Random seed for sampling tokens.
   optional uint32 random_seed = 4;
@@ -48,13 +48,44 @@ message LlmSessionConfig {
     // Whether to configure the graph to include the vision modality. Only one
     // of enable_vision_modality or enable_audio_modality can be true currently.
     optional bool enable_vision_modality = 2;
+
+    // Whether to configure the graph to include the audio modality. Only one
+    // of enable_vision_modality or enable_audio_modality can be true currently.
+    optional bool enable_audio_modality = 3;
   }
 
   // Parameters to customize the graph.
   optional GraphConfig graph_config = 6;
+
+  // The handle to the constraint.
+  optional uint64 constraint_handle = 7;
+
+  // PromptTemplates defines the prompt templates for the session.
+  message PromptTemplates {
+    // The prompt prefix for the user role.
+    optional string user_prefix = 1;
+
+    // The prompt suffix for the user role.
+    optional string user_suffix = 2;
+
+    // The prompt prefix for the model role.
+    optional string model_prefix = 3;
+
+    // The prompt suffix for the model role.
+    optional string model_suffix = 4;
+
+    // The prompt prefix for the system role.
+    optional string system_prefix = 5;
+
+    // The prompt suffix for the system role.
+    optional string system_suffix = 6;
+  }
+
+  optional PromptTemplates prompt_templates = 8;
 }
 
 // Configurable model parameters for creating an LLM inference engine.
+// Next ID: 14
 message LlmModelSettings {
   // Path to the tflite model file.
   string model_path = 1;
@@ -76,6 +107,9 @@ message LlmModelSettings {
   // The total number of tokens for kv-cache. In other words, this is the total
   // number of input + output tokens the model needs to handle.
   uint32 max_tokens = 5;
+
+  // Maximum number of images to be used for vision modality.
+  uint32 max_num_images = 12;
 
   // Number of supported lora ranks for the base model. Used by GPU only.
   uint32 number_of_supported_lora_ranks = 6;
@@ -101,6 +135,14 @@ message LlmModelSettings {
   }
 
   optional VisionModelSettings vision_model_settings = 9;
+
+  // A container for audio model related settings.
+  message AudioModelSettings {
+    // Maximum audio sequence length for the audio encoder. If greater than 0,
+    // it will override the default value provided by the model.
+    optional int64 max_audio_sequence_length = 1;
+  }
+  optional AudioModelSettings audio_model_settings = 13;
 
   // Reserved for audio model settings.
   reserved 10;
