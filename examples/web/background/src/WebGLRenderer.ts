@@ -56,7 +56,7 @@ export class WebGLRenderer {
         
         // If mask is background (low value), make transparent, else keep person
         if (maskColor.r > 0.1) {
-          gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
         } else {
           gl_FragColor = imageColor;
         }
@@ -134,7 +134,7 @@ export class WebGLRenderer {
     // Set up WebGL rendering to fit the canvas
     const canvas = gl.canvas as HTMLCanvasElement;
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0, 0, 0, 0);
+    gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.useProgram(this.program);

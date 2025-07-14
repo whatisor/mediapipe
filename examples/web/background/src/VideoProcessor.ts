@@ -9,6 +9,8 @@ export class VideoProcessor {
   private outputFPS: FPSCounter;
   private frameCallbackId: number | null = null;
   private lastFrameTime = 0;
+  private frameSkipCounter = 0;
+  private readonly FRAME_SKIP_INTERVAL = 2; // Process every 2nd frame
 
   constructor() {
     this.inputFPS = new FPSCounter();
@@ -29,14 +31,17 @@ export class VideoProcessor {
     const processFrame = async (now: number, metadata: any) => {
       if (!this.segmenter || !this.renderer) return;
 
-      // Count input frames
-      this.inputFPS.update();
+      const frameStart = performance.now();
+
 
       // Check if video is ready and not duplicate frame
       if (!isVideoReady(video, metadata.mediaTime) || this.lastFrameTime >= metadata.mediaTime) {
         this.requestNextFrame(video, processFrame);
         return;
       }
+      
+      // Count input frames
+      this.inputFPS.update();
 
       // Run segmentation
       const startTime = performance.now();
@@ -55,15 +60,30 @@ export class VideoProcessor {
         const maskTexture = mask.getAsWebGLTexture();
         
         // Render using WebGL
+        const renderStart = performance.now();
         this.renderer.render(video, maskTexture);
+        const renderTime = performance.now() - renderStart;
+        
+        // Log render time if it's slow
+        if (renderTime > 16) {
+          console.log(`Render took ${renderTime.toFixed(1)}ms`);
+        }
         
         // Clean up
         mask.close();
         result.close();
+      } else {
+        // Even if segmentation fails, we should still render something
+        console.log('Segmentation failed, no mask available');
       }
       
       // Count output frames (always update, regardless of segmentation success)
       this.outputFPS.update();
+
+      const totalFrameTime = performance.now() - frameStart;
+      if (totalFrameTime > 33) { // More than 30fps threshold
+        console.log(`Total frame time: ${totalFrameTime.toFixed(1)}ms (${(1000/totalFrameTime).toFixed(1)}fps)`);
+      }
 
       // Request next frame
       this.requestNextFrame(video, processFrame);

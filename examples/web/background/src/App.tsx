@@ -33,7 +33,13 @@ const App: React.FC = () => {
 
   // Initialize webcam
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ video: true })
+    navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 30 }
+      } 
+    })
       .then((stream) => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -101,15 +107,19 @@ const App: React.FC = () => {
       {error && <div style={{ color: 'red' }}>{error}</div>}
       <div style={{ display: 'flex', justifyContent: 'center' }}>
         <div style={{ position: 'relative' }}>
-          <h2>Background Extracted (WebGL)</h2>
-          <canvas ref={webglCanvasRef} width={640} height={480} style={{ border: '1px solid #ccc', maxWidth: '100%', height: 'auto' }} />
-          {/* Hidden video element for processing */}
-          <video ref={videoRef} width={1} height={1} autoPlay playsInline muted style={{ 
+          <h2>Background Extracted (WebGL)</h2><video ref={videoRef} autoPlay playsInline muted style={{ 
             position: 'absolute', 
             top: '0px', 
             left: '0px',
             pointerEvents: 'none',
+            width: '1px',
+            height: '1px',
+            zIndex: 0
           }} />
+          <canvas ref={webglCanvasRef} width={640} height={480} style={{
+            border: '1px solid #ccc', maxWidth: '100%', height: 'auto' }} />
+          {/* Hidden video element for processing */}
+          
           <FPSDisplay inputFPS={inputFPS} outputFPS={outputFPS} />
         </div>
       </div>
