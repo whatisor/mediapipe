@@ -6,4 +6,3 @@ script="rm .bazelversion; bazel build //mediapipe/tasks/web/vision:all; \
      cp -rf vision_pkg /mediapipe/vision_pkg; \
      echo Done. "
 docker run -v .:/mediapipe --rm -it mediapipe bash -c "$script;"
-
