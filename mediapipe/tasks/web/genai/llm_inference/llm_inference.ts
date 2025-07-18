@@ -28,6 +28,8 @@ import {WasmFileset} from '../../../../tasks/web/core/wasm_fileset';
 import {LlmInferenceGraphOptions} from '../../../../tasks/web/genai/llm_inference/proto/llm_inference_graph_options_pb';
 import {WasmModule} from '../../../../web/graph_runner/graph_runner';
 import {
+  instanceOfAudio,
+  instanceOfImage,
   MultiResponseProgressListener,
   ProgressListener,
   Prompt,
@@ -52,13 +54,14 @@ import {TransformerParameters} from '../../../../tasks/cc/genai/inference/proto/
 
 import {LlmInferenceOptions} from './llm_inference_options';
 import {
-  ModelFormat,
   getModelFormatAndClose,
+  ModelFormat,
   tee,
   uint8ArrayToStream,
 } from './model_loading_utils';
 
 export type {
+  Audio,
   Image,
   MultiResponseProgressListener,
   ProgressListener,
@@ -450,8 +453,12 @@ export class LlmInference extends TaskRunner {
         'maxNumImages' in options && options.maxNumImages
           ? (options.maxNumImages as number)
           : 0;
+      this.options.setMaxNumImages(maxNumImages);
 
-      if (this.isConvertedModel || maxNumImages > 0) {
+      const supportAudio = 'supportAudio' in options && !!options.supportAudio;
+      this.options.setSupportAudio(supportAudio);
+
+      if (this.isConvertedModel || maxNumImages > 0 || supportAudio) {
         this.useLlmEngine = true;
         modelStream = modelStreamForLoading;
       } else {
@@ -505,7 +512,8 @@ export class LlmInference extends TaskRunner {
       }
       if (this.useLlmEngine && numResponsesToSet > 1) {
         throw new Error(
-          `'numResponses > 1' is not supported for converted LLM models yet.`,
+          `'numResponses > 1' is not supported for converted LLM models yet, ` +
+            `and is also not supported with multimodality.`,
         );
       }
       this.options.setNumResponses(numResponsesToSet);
@@ -750,10 +758,9 @@ export class LlmInference extends TaskRunner {
         : progressListener;
     // If prompt contains a multi-modal piece, ensure options are set properly.
     const queryAsArray = Array.isArray(query) ? query : [query];
-    const numImages = queryAsArray.filter(
-      (elem) => typeof elem !== 'string',
+    const numImages = queryAsArray.filter((elem) =>
+      instanceOfImage(elem),
     ).length;
-    // For now MM is only vision.
     if (
       numImages > 0 &&
       (!this.options.hasMaxNumImages() ||
@@ -767,6 +774,18 @@ export class LlmInference extends TaskRunner {
           `, but the query included ${numImages} images.`,
       );
     }
+    const numAudios = queryAsArray.filter((elem) =>
+      instanceOfAudio(elem),
+    ).length;
+    if (
+      numAudios > 0 &&
+      (!this.options.hasSupportAudio() || !this.options.getSupportAudio())
+    ) {
+      throw new Error(
+        `supportAudio was not enabled, but the query included ${numAudios} ` +
+          `audio chunks.`,
+      );
+    }
     if (this.useLlmEngine) {
       // TODO: b/398949555 - Support multi-response generation for converted LLM
       // models (.task format).
@@ -776,13 +795,16 @@ export class LlmInference extends TaskRunner {
       ) {
         throw new Error(
           'Multi-response generation is not supported for converted LLM ' +
-            'models (.task format) yet. Please use the .bin format.',
+            'models (.task format) yet, nor is it supported for ' +
+            'multimodality. Please use the .bin format without multimodality ' +
+            'or request only one response.',
         );
       }
       if (loraModelOrProgressListener instanceof LoraModel) {
         throw new Error(
           'LoRA is not supported for converted LLM models (.task format) ' +
-            'yet. Please use the .bin format.',
+            'yet, nor is it supported for multimodality. Please use the .bin ' +
+            'format without multimodality to use LoRA.',
         );
       }
       // TODO: b/398904237 - Support streaming generation by passing the
@@ -874,8 +896,11 @@ export class LlmInference extends TaskRunner {
     if (this.isProcessing) {
       throw new Error('Previous invocation or loading is still ongoing.');
     }
-    if (queryAsArray.some((elem) => typeof elem !== 'string')) {
+    if (queryAsArray.some(instanceOfImage)) {
       throw new Error('sizeInTokens requires maxNumImages > 0 for images.');
+    }
+    if (queryAsArray.some(instanceOfAudio)) {
+      throw new Error('sizeInTokens requires supportAudio for audio.');
     }
     const text = queryAsArray.join('');
     this.isProcessing = true;
@@ -906,8 +931,9 @@ export class LlmInference extends TaskRunner {
     // TODO: b/398858769 - Support LoRA for converted LLM models (.task format).
     if (this.useLlmEngine) {
       throw new Error(
-        'LoRA is not supported for converted LLM models (.task format) yet. ' +
-          'Please use the old foramat (.bin) to use LoRA.',
+        'LoRA is not supported for converted LLM models (.task format) yet, ' +
+          'nor is it supported for multimodality. Please use the old format ' +
+          '(.bin) without multimodality to use LoRA.',
       );
     }
     if (this.isProcessing) {
