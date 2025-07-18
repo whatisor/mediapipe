@@ -55,7 +55,7 @@ const App: React.FC = () => {
       
       try {
         const filesetResolver = await FilesetResolver.forVisionTasks(
-          '/node_modules/@mediapipe/tasks-vision/wasm'
+          'wasm'
         );
         const segmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
           baseOptions: { 
