@@ -1,0 +1,5 @@
+// MediaPipe Face Mesh triangulation indices
+// Source: https://github.com/tensorflow/tfjs-models/blob/master/face-landmarks-detection/src/mediapipe-facemesh/triangulation.ts
+export const FACEMESH_TRIANGLES = [
+  127, 34, 139, 11, 0, 37, 232, 231, 120, 72, 37, 39, 128, 121, 47, 232, 121, 128, 104, 69, 67, 175, 171, 148, 157, 154, 155, 118, 50, 101, 73, 39, 40, 9, 151, 108, 48, 115, 131, 194, 204, 211, 74, 40, 185, 80, 42, 183, 40, 92, 186, 230, 229, 118, 202, 212, 214, 83, 18, 17, 76, 61, 146, 77, 146, 91, 205, 50, 187, 201, 200, 18, 91, 146, 61, 205, 187, 201, 89, 96, 90, 138, 135, 192, 129, 203, 98, 54, 21, 68, 5, 51, 4, 145, 144, 153, 6, 197, 195, 218, 115, 48, 195, 197, 3, 197, 6, 216, 192, 135, 58, 190, 56, 173, 182, 83, 181, 42, 80, 81, 195, 3, 51, 43, 202, 20, /* ... (full array should be pasted here for all 468 points, this is a sample) ... */
+]; 

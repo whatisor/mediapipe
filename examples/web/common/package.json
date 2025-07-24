@@ -1,0 +1,25 @@
+{
+  "name": "@mediapipe/web-common",
+  "version": "1.0.0",
+  "description": "Common utilities for MediaPipe web examples",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "file:../../../vision_pkg",
+    "google-protobuf": "^3.21.2"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "@types/react": "^19.1.8"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0"
+  },
+  "files": [
+    "dist/**/*"
+  ]
+} 

@@ -1,3 +1,6 @@
+/**
+ * WebGL Renderer for efficient video processing and rendering
+ */
 export class WebGLRenderer {
   private gl: WebGL2RenderingContext;
   private program: WebGLProgram;
@@ -182,4 +185,20 @@ export class WebGLRenderer {
   public getContext(): WebGL2RenderingContext {
     return this.gl;
   }
-} 
+}
+
+/**
+ * Create a fallback mask texture (white texture that shows everything)
+ */
+export const createFallbackMaskTexture = (gl: WebGL2RenderingContext): WebGLTexture => {
+  const texture = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  
+  // Create a 1x1 white pixel
+  const pixel = new Uint8Array([255, 255, 255, 255]);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  
+  return texture;
+}; 

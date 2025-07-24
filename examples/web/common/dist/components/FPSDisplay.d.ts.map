@@ -1,0 +1,1 @@
+{"version":3,"file":"FPSDisplay.d.ts","sourceRoot":"","sources":["../../src/components/FPSDisplay.tsx"],"names":[],"mappings":"AAAA,OAAO,KAAK,MAAM,OAAO,CAAC;AAE1B,UAAU,eAAe;IACvB,QAAQ,EAAE,MAAM,CAAC;IACjB,SAAS,EAAE,MAAM,CAAC;IAClB,KAAK,CAAC,EAAE,KAAK,CAAC,aAAa,CAAC;CAC7B;AAED,eAAO,MAAM,UAAU,EAAE,KAAK,CAAC,EAAE,CAAC,eAAe,CAyBhD,CAAC"}

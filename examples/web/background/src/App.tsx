@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImageSegmenter, FilesetResolver } from '@mediapipe/tasks-vision';
-import { WebGLRenderer } from './WebGLRenderer';
-import { VideoProcessor } from './VideoProcessor';
-import { CanvasManager } from './CanvasManager';
-import { FPSDisplay } from './FPSDisplay';
-
-const MODEL_PATH = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite';
+import { 
+  WebGLRenderer, 
+  VideoProcessor, 
+  CanvasManager, 
+  FPSDisplay,
+  loadVisionModel,
+  getModelConfig,
+  initializeWebcam
+} from '@mediapipe/web-common';
 
 const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -33,19 +35,13 @@ const App: React.FC = () => {
 
   // Initialize webcam
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ 
-      video: { 
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        frameRate: { ideal: 30 }
-      } 
-    })
-      .then((stream) => {
+    initializeWebcam()
+      .then((stream: MediaStream) => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
       })
-      .catch((err) => setError('Could not access webcam: ' + err));
+      .catch((err: any) => setError('Could not access webcam: ' + err));
   }, []);
 
   // Load the segmenter
@@ -54,18 +50,8 @@ const App: React.FC = () => {
       if (!webglCanvasRef.current) return;
       
       try {
-        const filesetResolver = await FilesetResolver.forVisionTasks(
-          'wasm'
-        );
-        const segmenter = await ImageSegmenter.createFromOptions(filesetResolver, {
-          baseOptions: { 
-            modelAssetPath: MODEL_PATH,
-            delegate: "GPU"
-          },
-          outputCategoryMask: true,
-          canvas: webglCanvasRef.current,
-          runningMode: "VIDEO"
-        });
+        const config = getModelConfig('imageSegmenter');
+        const segmenter = await loadVisionModel('ImageSegmenter', config, webglCanvasRef.current);
         
         if (videoProcessorRef.current) {
           videoProcessorRef.current.setSegmenter(segmenter);
