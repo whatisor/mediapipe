@@ -54,22 +54,30 @@ export const WebGLFaceWarp: React.FC<WebGLFaceWarpProps> = ({
     }
   }, [sourceImage]);
 
-  // Re-render whenever props change
+  // Re-render whenever props or size change
   useEffect(() => {
-    if (rendererRef.current && imageRef.current && sourceLandmarks.length > 0 && targetLandmarks.length > 0) {
-      if (canvasRef.current) {
-        canvasRef.current.width = width;
-        canvasRef.current.height = height;
-      }
-      
-      rendererRef.current.render(
-        imageRef.current,
-        videoFrame,
-        sourceLandmarks,
-        targetLandmarks
-      );
+    if (!rendererRef.current || !imageRef.current || sourceLandmarks.length === 0 || targetLandmarks.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Fit drawing buffer to CSS size (container controls CSS size). This avoids 225px vs 300px mismatch.
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || width;
+    const cssH = canvas.clientHeight || height;
+    const bufW = Math.max(1, Math.round(cssW * dpr));
+    const bufH = Math.max(1, Math.round(cssH * dpr));
+    if (canvas.width !== bufW || canvas.height !== bufH) {
+      canvas.width = bufW;
+      canvas.height = bufH;
     }
+
+    rendererRef.current.render(
+      imageRef.current,
+      videoFrame,
+      sourceLandmarks,
+      targetLandmarks
+    );
   }, [sourceImage, sourceLandmarks, targetLandmarks, videoFrame, width, height]);
 
-  return <canvas ref={canvasRef} width={width} height={height} />;
+  return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />;
 };
