@@ -10,8 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "file:../../../vision_pkg",
-    "@mediapipe/web-common": "file:../common",
+    "@mediapipe/tasks-vision": "link:../../../vision_pkg",
+    "@mediapipe/web-common": "link:../common",
     "@types/google-protobuf": "^3.15.12",
     "google-protobuf": "^3.21.4",
     "react": "^19.1.0",

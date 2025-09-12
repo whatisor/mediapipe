@@ -12,6 +12,8 @@ export class VideoProcessor {
   private outputFPS: FPSCounter;
   private frameCallbackId: number | null = null;
   private lastFrameTime = 0;
+  private onReadyCallback: (() => void) | null = null;
+  private hasFiredReady = false;
 
   constructor() {
     this.inputFPS = new FPSCounter();
@@ -26,13 +28,17 @@ export class VideoProcessor {
     this.renderer = renderer;
   }
 
+  setOnReady(callback: () => void): void {
+    this.onReadyCallback = callback;
+  }
+
   startProcessing(video: HTMLVideoElement): void {
     if (!this.segmenter || !this.renderer) return;
     
     const processFrame = async (_now: number, metadata: any) => {
       if (!this.segmenter || !this.renderer) return;
 
-      const frameStart = performance.now();
+      //const frameStart = performance.now();
 
       // Check if video is ready and not duplicate frame
       if (!isVideoReady(video, metadata.mediaTime) || this.lastFrameTime >= metadata.mediaTime) {
@@ -80,7 +86,15 @@ export class VideoProcessor {
       // Count output frames (always update, regardless of segmentation success)
       this.outputFPS.update();
 
-      const totalFrameTime = performance.now() - frameStart;
+      // Fire onReady once after first successful render
+      if (!this.hasFiredReady) {
+        this.hasFiredReady = true;
+        if (this.onReadyCallback) {
+          try { this.onReadyCallback(); } catch {}
+        }
+      }
+
+      //const totalFrameTime = performance.now() - frameStart;
       // if (totalFrameTime > 33) { // More than 30fps threshold
       //   console.log(`Total frame time: ${totalFrameTime.toFixed(1)}ms (${(1000/totalFrameTime).toFixed(1)}fps)`);
       // }
@@ -143,7 +157,7 @@ export class GenericVideoProcessor {
     const processFrame = async (_now: number, metadata: any) => {
       if (!this.model) return;
 
-      const frameStart = performance.now();
+      //const frameStart = performance.now();
 
       // Check if video is ready and not duplicate frame
       if (!isVideoReady(video, metadata.mediaTime) || this.lastFrameTime >= metadata.mediaTime) {
@@ -178,7 +192,7 @@ export class GenericVideoProcessor {
       // Count output frames
       this.outputFPS.update();
 
-      const totalFrameTime = performance.now() - frameStart;
+      //const totalFrameTime = performance.now() - frameStart;
       // if (totalFrameTime > 33) { // More than 30fps threshold
       //   console.log(`Total frame time: ${totalFrameTime.toFixed(1)}ms (${(1000/totalFrameTime).toFixed(1)}fps)`);
       // }
